@@ -56,7 +56,7 @@ stages:
       displayName: 'Publish Artifact'
 
 # ───────────────────────────────────────────────
-# STAGE 2: INFRASTRUCTURE (TERRAFORM)
+# STAGE 2: INFRASTRUCTURE (TERRAFORM - CLI FIXED)
 # ───────────────────────────────────────────────
 - stage: Infrastructure
   displayName: 'Terraform Deploy'
@@ -68,39 +68,52 @@ stages:
     pool:
       vmImage: $(vmImageName)
     steps:
-    - task: TerraformInstaller@1
-      inputs:
-        terraformVersion: '1.7.0'
+    - checkout: self
+
+    # ✅ Install Terraform manually
+    - script: |
+        sudo apt-get update
+        sudo apt-get install -y unzip
+        curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip -o terraform.zip
+        unzip terraform.zip
+        sudo mv terraform /usr/local/bin/
       displayName: 'Install Terraform'
 
-    - task: TerraformTaskV4@4
+    # ✅ Verify Terraform
+    - script: terraform version
+      displayName: 'Terraform Version'
+
+    # ✅ Login to Azure
+    - task: AzureCLI@2
       inputs:
-        provider: 'azurerm'
-        command: 'init'
-        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
-        backendServiceArm: '$(azureSubscription)'
-        backendAzureRmResourceGroupName: 'tfstate-rg'
-        backendAzureRmStorageAccountName: 'tfstatestorage2026'
-        backendAzureRmContainerName: 'tfstate'
-        backendAzureRmKey: 'hello-world.terraform.tfstate'
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          echo "Logged into Azure successfully"
+      displayName: 'Azure Login'
+
+    # ✅ Terraform Init (backend config corrected)
+    - script: |
+        cd terraform
+        terraform init \
+          -backend-config="resource_group_name=tfstate-rg" \
+          -backend-config="storage_account_name=mystorageaccountelvis" \
+          -backend-config="container_name=tfstate" \
+          -backend-config="key=hello-world.terraform.tfstate"
       displayName: 'Terraform Init'
 
-    - task: TerraformTaskV4@4
-      inputs:
-        provider: 'azurerm'
-        command: 'plan'
-        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
-        environmentServiceNameAzureRM: '$(azureSubscription)'
+    # ✅ Terraform Plan
+    - script: |
+        cd terraform
+        terraform plan
       displayName: 'Terraform Plan'
 
-    - task: TerraformTaskV4@4
-      inputs:
-        provider: 'azurerm'
-        command: 'apply'
-        workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
-        environmentServiceNameAzureRM: '$(azureSubscription)'
+    # ✅ Terraform Apply
+    - script: |
+        cd terraform
+        terraform apply -auto-approve
       displayName: 'Terraform Apply'
-
 # ───────────────────────────────────────────────
 # STAGE 3: DEPLOY APPLICATION (CD)
 # ───────────────────────────────────────────────
